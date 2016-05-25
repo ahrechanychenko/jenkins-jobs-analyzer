@@ -5,9 +5,10 @@ from email.MIMEText import MIMEText
 import yaml
 import os
 
+
 def job_analyser():
-    JENKINS_HOST = os.getenv('JENKINS_HOST') # Jenkins Job server
-    JENKINS_JOBS_YAML = os.getenv('JENKINS_JOBS_YAML') # Path to yaml with jenkins job's to analyse
+    JENKINS_HOST = os.getenv('JENKINS_HOST')
+    JENKINS_JOBS_YAML = os.getenv('JENKINS_JOBS_YAML')
     jenkins_url = 'http://' + JENKINS_HOST
     server = jenkins.Jenkins(jenkins_url)
 
@@ -18,15 +19,18 @@ def job_analyser():
     job_instances = {}
 
     for job_name in jobs:
-        job_instances[job_name] = server.get_job_info(job_name,depth=10)
+        job_instances[job_name] = server.get_job_info(job_name, depth=10)
 
     list_of_failed_jobs = []
     for job_name in jobs:
-        if job_instances[job_name]['lastCompletedBuild']['result'] == 'FAILURE':
-            list_of_failed_jobs.append(job_instances[job_name]['lastCompletedBuild']['url'])
+        if job_instances[job_name]['lastCompletedBuild']['result']\
+                == 'FAILURE':
+            list_of_failed_jobs.append(
+                job_instances[job_name]['lastCompletedBuild']['url'])
     return list_of_failed_jobs
 
-def send_mail(list_of_failed_jobs, sender, reciever, password, smpt_server):
+
+def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server):
     fromaddr = sender
     toaddr = reciever
     msg = MIMEMultipart()
@@ -37,7 +41,7 @@ def send_mail(list_of_failed_jobs, sender, reciever, password, smpt_server):
     body = "list of failed jobs {}".format(list_of_failed_jobs)
     msg.attach(MIMEText(body, 'plain'))
 
-    server = smtplib.SMTP(smpt_server, 587)
+    server = smtplib.SMTP(smtp_server, 587)
     server.starttls()
     server.login(fromaddr, password)
     text = msg.as_string()
@@ -46,7 +50,8 @@ def send_mail(list_of_failed_jobs, sender, reciever, password, smpt_server):
 
 if __name__ == '__main__':
     list_of_failed_jobs = job_analyser()
-    send_mail(list_of_failed_jobs)
-
-
-
+    sender = os.getenv('SENDER')
+    reciever = os.getenv('RECIEVER')
+    password = os.getenv('PASSWORD')
+    smtp_server = os.getenv('SMTP')
+    send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server)
