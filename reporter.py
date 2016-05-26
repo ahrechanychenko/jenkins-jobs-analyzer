@@ -6,7 +6,52 @@ import yaml
 import os
 import sqlite3
 import re
-import pprint
+
+
+def pretty_log(src, indent=0, invert=False):
+    """ Make log more readable and awesome
+    The main application is using instead of json.dumps().
+    :param src: dictionary with data, list of dicts
+                can be also used for strings or lists of strings,
+                but it makes no sense.
+                Note: Indent for list by default is +3. If you want to call
+                pretty_log for list , call it with indent=-3 for 0,
+                indent=-3+1 for 1 and etc.
+    :param indent: int
+    :param invert: Swaps first and second columns. Can be used ONLY
+     with one levels dictionary
+    :return: formatted string with result, can be used in log
+    """
+
+    result = ''
+    templates = ["\n{indent}{item:{len}}{value}" if not invert else
+                 "\n{indent}{value:{len}}{item}",
+                 "\n{indent}{item}:",
+                 '\n{indent}{value}']
+
+    if src and isinstance(src, dict):
+        max_len = len(max(src.values() if invert else src.keys(),
+                          key=lambda x: len(str(x))))
+        for key, value in src.items():
+            if (isinstance(value, dict) and value) or \
+                    isinstance(value, list):
+                result += templates[1].format(indent=' ' * indent, item=key)
+                result += pretty_log(value, indent + 3)
+            else:
+                result += templates[0].format(indent=' ' * indent,
+                                              item=key,
+                                              value=str(value),
+                                              len=max_len + 5)
+
+    elif src and isinstance(src, list):
+        for el in src:
+            if (isinstance(el, dict) and el) or isinstance(el, list):
+                res = pretty_log(el, indent + 3)
+            else:
+                res = templates[2].format(indent=' ' * (indent + 3),
+                                          value=str(el))
+            result += res[:indent + 2] + '-' + res[indent + 3:]
+    return result
 
 
 def get_jobs_from_yaml(JENKINS_JOBS_YAML):
@@ -43,7 +88,7 @@ def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server):
     msg['From'] = fromaddr
     msg['To'] = toaddr
     msg['Subject'] = "gating"
-    body = "list of failed jobs \n {}".format(pprint.pformat(list_of_failed_jobs))
+    body = "list of failed jobs \n {}".format(pretty_log(list_of_failed_jobs))
     msg.attach(MIMEText(body, 'plain'))
 
     server = smtplib.SMTP(smtp_server, 587)
@@ -59,7 +104,9 @@ def create_database(db, jobs):
     cur = con.cursor()
     for job in jobs:
         job = re.sub('[-.]', '_', job)
-        table_exist = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (job,))
+        table_exist = cur.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name=?", (job,))
         if not table_exist.fetchone():
             cur.execute("CREATE TABLE  " + job +
                         " (build_number INT, "
@@ -86,7 +133,8 @@ def write_job_results_to_db(jobs_instance, jobs, db, jobs_last_numbers):
             cur = con.cursor()
             cur.execute("INSERT INTO " + (re.sub('[-.]', '_', job)) +
                         " (build_number , result, url) "
-                        "VALUES (?, ?, ?)", (jobs_last_numbers[job], job_result, job_url))
+                        "VALUES (?, ?, ?)", (
+                            jobs_last_numbers[job], job_result, job_url))
             con.commit()
 
 
@@ -100,7 +148,7 @@ def check_last_build_result(jobs, jobs_build_numbers, db):
                     " WHERE build_number=?", (jobs_build_numbers[job], ))
         result = cur.fetchall()
         if 'FAILURE' in result:
-            failed_jobs[job]= {}
+            failed_jobs[job] = {}
             failed_jobs[job]['result'] = result
             cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
                         " WHERE build_number=?", (jobs_build_numbers[job],))
@@ -122,12 +170,13 @@ if __name__ == '__main__':
     instances = get_job_instances(host=JENKINS_HOST, jobs=job_from_yaml)
     jobs_build_numbers = get_jobs_last_build_number(instances, job_from_yaml)
     create_database(database, job_from_yaml)
-    write_job_results_to_db(instances, job_from_yaml, database, jobs_build_numbers)
-    failed_jobs = check_last_build_result(job_from_yaml, jobs_build_numbers, database)
+    write_job_results_to_db(instances,
+                            job_from_yaml, database, jobs_build_numbers)
+    failed_jobs = check_last_build_result(job_from_yaml,
+                                          jobs_build_numbers, database)
     if failed_jobs:
         send_mail(list_of_failed_jobs=failed_jobs,
                   sender=sender,
                   reciever=reciever,
                   password=password,
                   smtp_server=smtp_server)
-
