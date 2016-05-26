@@ -21,12 +21,15 @@ if __name__ == '__main__':
     if settings.init_run:
         create_database(settings.database, job_from_yaml)
         update_db(db_con, instances, job_from_yaml, init=True)
+        failed_jobs = check_last_build_result(job_from_yaml,
+                                              jobs_build_numbers, settings.database)
     else:
         db_builds = get_db_builds_number(db_con, job_from_yaml)
         update_db(db_con, instances, job_from_yaml, db_builds)
 
-    failed_jobs = check_last_build_result(job_from_yaml,
-                                          jobs_build_numbers, settings.database)
+    failed_jobs = check_last_build_result(db_con, job_from_yaml, jobs_build_numbers,
+                            db_builds)
+
     if failed_jobs:
         send_mail(list_of_failed_jobs=failed_jobs,
                   sender=settings.sender,

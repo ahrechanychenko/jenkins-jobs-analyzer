@@ -53,6 +53,14 @@ def pretty_log(src, indent=0, invert=False):
     return result
 
 
+def get_instance_last_build_number(job_instances, jobs):
+    jobs_last_builds = {}
+    for job_name in jobs:
+        jobs_last_builds[job_name] = \
+            job_instances[job_name]['lastCompletedBuild']['number']
+    return jobs_last_builds
+
+
 def get_jobs_from_yaml(JENKINS_JOBS_YAML):
     # retrieve jenkins job's from yaml
     with open(JENKINS_JOBS_YAML, "r") as f:
@@ -106,20 +114,39 @@ def create_database(db_con, jobs):
     db_con.close()
 
 
-def check_last_build_result(jobs, jobs_build_numbers, db_con):
+def check_last_build_result(db_con, jobs, jobs_build_numbers=None,
+                            db_before_check_last_builds=None):
     cur = db_con.cursor()
     failed_jobs = {}
     for job in jobs:
-        cur.execute("SELECT result from " + (re.sub('[-.]', '_', job)) +
-                    " WHERE build_number=?", (jobs_build_numbers[job], ))
-        result = cur.fetchall()
-        if 'FAILURE' in result:
-            failed_jobs[job] = {}
-            failed_jobs[job]['result'] = result
-            cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
-                        " WHERE build_number=?", (jobs_build_numbers[job],))
-            url = cur.fetchall()
-            failed_jobs[job]['url'] = url
+        if jobs_build_numbers:
+            cur.execute("SELECT result from " + (re.sub('[-.]', '_', job)) +
+                        " WHERE build_number=?", (jobs_build_numbers[job], ))
+            result = cur.fetchall()
+            if 'FAILURE' in result:
+                failed_jobs[job] = {}
+                failed_jobs[job]['result'] = result
+                cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
+                            " WHERE build_number=?", (jobs_build_numbers[job],))
+                url = cur.fetchall()
+                failed_jobs[job]['url'] = url
+
+        elif db_before_check_last_builds:
+            db_builds = get_db_builds_number(db_con, jobs)
+            for build in db_builds[job]:
+                if build not in db_before_check_last_builds[job]:
+                    cur.execute(
+                        "SELECT result from " + (re.sub('[-.]', '_', job)) +
+                        " WHERE build_number=?", (build,))
+                result = cur.fetchall()
+                if 'FAILURE' in result:
+                    failed_jobs[job] = {}
+                    failed_jobs[job]['result'] = result
+                    cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
+                                " WHERE build_number=?", (build,))
+                    url = cur.fetchall()
+                    failed_jobs[job]['url'] = url
+
     db_con.close()
     return failed_jobs
 
