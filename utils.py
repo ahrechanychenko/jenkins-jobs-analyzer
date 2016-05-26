@@ -98,8 +98,9 @@ def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server):
     server.quit()
 
 
-def create_database(db_con, jobs):
-    cur = db_con.cursor()
+def create_database(db, jobs):
+    con = open_db_conn(db)
+    cur = con.cursor()
     for job in jobs:
         job = re.sub('[-.]', '_', job)
         table_exist = cur.execute(
@@ -110,20 +111,23 @@ def create_database(db_con, jobs):
                         " (build_number INT, "
                         "result VARCHAR(30),"
                         "url VARCHAR(30))")
-    db_con.commit()
-    db_con.close()
+    con.commit()
+    con.close()
 
 
-def check_last_build_result(db_con, jobs, jobs_build_numbers=None,
+def check_last_build_result(db, jobs, jobs_build_numbers=None,
                             db_before_check_last_builds=None):
-    cur = db_con.cursor()
     failed_jobs = {}
     for job in jobs:
         if jobs_build_numbers:
+            con = open_db_conn(db)
+            cur = con.cursor()
             cur.execute("SELECT result from " + (re.sub('[-.]', '_', job)) +
                         " WHERE build_number=?", (jobs_build_numbers[job], ))
             result = cur.fetchall()
             if 'FAILURE' in result:
+                con = open_db_conn(db)
+                cur = con.cursor()
                 failed_jobs[job] = {}
                 failed_jobs[job]['result'] = result
                 cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
@@ -132,32 +136,36 @@ def check_last_build_result(db_con, jobs, jobs_build_numbers=None,
                 failed_jobs[job]['url'] = url
 
         elif db_before_check_last_builds:
-            db_builds = get_db_builds_number(db_con, jobs)
+            con = open_db_conn(db)
+            db_builds = get_db_builds_number(con, jobs)
             for build in db_builds[job]:
                 if build not in db_before_check_last_builds[job]:
+                    con = open_db_conn(db)
+                    cur = con.cursor()
                     cur.execute(
                         "SELECT result from " + (re.sub('[-.]', '_', job)) +
                         " WHERE build_number=?", (build,))
-                result = cur.fetchall()
-                if 'FAILURE' in result:
-                    failed_jobs[job] = {}
-                    failed_jobs[job]['result'] = result
-                    cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
-                                " WHERE build_number=?", (build,))
-                    url = cur.fetchall()
-                    failed_jobs[job]['url'] = url
-
-    db_con.close()
+                    result = cur.fetchall()
+                    if 'FAILURE' in result:
+                        failed_jobs[job] = {}
+                        failed_jobs[job]['result'] = result
+                        con = open_db_conn(db)
+                        cur = con.cursor()
+                        cur.execute("SELECT url from " + (re.sub('[-.]', '_', job)) +
+                                    " WHERE build_number=?", (build,))
+                        url = cur.fetchall()
+                        failed_jobs[job]['url'] = url
     return failed_jobs
 
 
-def get_db_builds_number(db_con, jobs):
+def get_db_builds_number(db, jobs):
     builds = {}
     for job in jobs:
-        cur = db_con.cursor()
+        con = open_db_conn(db)
+        cur = con.cursor()
         cur.execute("SELECT build_number from " + (re.sub('[-.]', '_', job)))
         select = cur.fetchall()
-        db_con.close()
+        con.close()
         builds[job] = select
     return builds
 
@@ -168,29 +176,31 @@ def open_db_conn(db):
     return con
 
 
-def update_db(db_con, instance, jobs, builds_in_db=None, init=False):
+def update_db(db, instance, jobs, builds_in_db=None, init=False):
     for job in jobs:
         if init:
             result = \
                 instance[job]['lastCompletedBuild']['result']
             url = instance[job]['lastCompletedBuild']['url']
             number = instance[job]['lastCompletedBuild']['number']
-            cur = db_con.cursor()
+            con = open_db_conn(db)
+            cur = con.cursor()
             cur.execute("INSERT INTO " + (re.sub('[-.]', '_', job)) +
                         " (build_number , result, url) "
                         "VALUES (?, ?, ?)", (
                             number, result, url))
-            db_con.commit()
+            open_db_conn(db).commit()
         else:
             for i in range(len(instance[job]['builds'])):
                 url = instance[job]['builds'][i]['url']
                 result = instance[job]['builds'][i]['result']
                 number = instance[job]['builds'][i]['number']
                 if number not in builds_in_db[job]:
-                    cur = db_con.cursor()
+                    con = open_db_conn(db)
+                    cur = con.cursor()
                     cur.execute("INSERT INTO " + (re.sub('[-.]', '_', job)) +
                                 " (build_number , result, url) "
                                 "VALUES (?, ?, ?)", (
                                     number, result, url))
                     cur.execute()
-                    db_con.close()
+                    con.close()

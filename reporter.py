@@ -16,7 +16,7 @@ if __name__ == '__main__':
     job_from_yaml = get_jobs_from_yaml(settings.JENKINS_JOBS_YAML)
     instances = get_job_instances(host=settings.JENKINS_HOST, jobs=job_from_yaml)
     jobs_build_numbers = get_instance_last_build_number(instances, job_from_yaml)
-    db_con = open_db_conn(settings.database)
+    db_con = settings.database
 
     if settings.init_run:
         create_database(settings.database, job_from_yaml)
