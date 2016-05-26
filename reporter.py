@@ -25,9 +25,9 @@ if __name__ == '__main__':
                                               jobs_build_numbers, settings.database)
     else:
         db_builds = get_db_builds_number(db_con, job_from_yaml)
+        print db_builds
         update_db(db_con, instances, job_from_yaml, db_builds)
-
-    failed_jobs = check_last_build_result(db_con, job_from_yaml, jobs_build_numbers,
+        failed_jobs = check_last_build_result(db_con, job_from_yaml, jobs_build_numbers,
                             db_builds)
 
     if failed_jobs:

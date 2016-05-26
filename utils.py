@@ -192,9 +192,12 @@ def update_db(db, instance, jobs, builds_in_db=None, init=False):
             open_db_conn(db).commit()
         else:
             for i in range(len(instance[job]['builds'])):
+                print len(instance[job]['builds'])
                 url = instance[job]['builds'][i]['url']
                 result = instance[job]['builds'][i]['result']
                 number = instance[job]['builds'][i]['number']
+                print number
+                print builds_in_db[job]
                 if number not in builds_in_db[job]:
                     con = open_db_conn(db)
                     cur = con.cursor()
@@ -202,5 +205,4 @@ def update_db(db, instance, jobs, builds_in_db=None, init=False):
                                 " (build_number , result, url) "
                                 "VALUES (?, ?, ?)", (
                                     number, result, url))
-                    cur.execute()
                     con.close()
