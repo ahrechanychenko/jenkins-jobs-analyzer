@@ -3,7 +3,7 @@ import os
 JENKINS_JOBS_YAML = os.getenv('JENKINS_JOBS_YAML')
 JENKINS_HOST = os.getenv('JENKINS_HOST')
 sender = os.getenv('SENDER')
-reciever = os.getenv('RECIEVER')
+receiver = os.getenv('RECEIVER')
 password = os.getenv('PASSWORD')
 smtp_server = os.getenv('SMTP')
 database = os.getenv('DATABASE')
