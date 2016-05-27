@@ -225,15 +225,17 @@ def update_db(db, instance, jobs, builds_in_db=None, init=False):
                 url = instance[job]['builds'][i]['url']
                 result = instance[job]['builds'][i]['result']
                 number = instance[job]['builds'][i]['number']
-                if number not in builds_in_db[sql_job_lenght_limit(job)]:
+                if number == builds_in_db[sql_job_lenght_limit(job)]:
+		    break
+		else:
                     con = open_db_conn(db)
                     cur = con.cursor()
 
-                    job = sql_job_lenght_limit(job)
+                    db_job = sql_job_lenght_limit(job)
 
                     cur.execute(
-                        "INSERT INTO " + job + " (build_number ,result, url)"
+                        "INSERT INTO " + db_job + " (build_number ,result, url)"
                                                " VALUES (?, ?, ?)",
                         (number, result, url))
-
+		    con.commit()
                     con.close()

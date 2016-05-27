@@ -23,8 +23,7 @@ if __name__ == '__main__':
     else:
         db_builds = get_db_builds_number(db_con, job_from_yaml)
         update_db(db_con, instances, job_from_yaml, builds_in_db=db_builds)
-        failed_jobs = check_last_build_result(db_con, job_from_yaml,
-                                              db_before_check_last_builds=db_builds)
+        failed_jobs = check_last_build_result(db_con, job_from_yaml, None, db_builds)
 
     if failed_jobs:
         send_mail(list_of_failed_jobs=failed_jobs,
