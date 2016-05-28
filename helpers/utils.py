@@ -5,6 +5,7 @@ from email.MIMEText import MIMEText
 import yaml
 import sqlite3
 import re
+from files import settings
 
 
 def pretty_log(src, indent=0, invert=False):
@@ -97,16 +98,30 @@ def get_job_instances(host, jobs):
     return job_instances
 
 
-def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server):
+def get_build_console(job, build, host=settings.JENKINS_HOST):
+    jenkins_url = 'http://' + host
+    server = jenkins.Jenkins(jenkins_url)
+    return server.get_build_console_output(job, build)
+
+
+def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server,
+              skipped_modules=None):
     fromaddr = sender
     toaddr = reciever
     msg = MIMEMultipart()
     msg['From'] = fromaddr
     msg['To'] = toaddr
     msg['Subject'] = "gating"
-    body = "list of failed jobs \n {}".format(pretty_log(list_of_failed_jobs, indent=1))
-    msg.attach(MIMEText(body, 'plain'))
 
+    if skipped_modules:
+        body = "there are skipped modules in fuel_library jobs \n {}".format(
+            pretty_log(skipped_modules, indent=1))
+
+    else:
+        body = "list of failed jobs \n {}".format(
+            pretty_log(list_of_failed_jobs, indent=1))
+
+    msg.attach(MIMEText(body, 'plain'))
     server = smtplib.SMTP(smtp_server, 587)
     server.starttls()
     server.login(fromaddr, password)
@@ -124,14 +139,20 @@ def create_database(db, jobs):
     con = open_db_conn(db)
     cur = con.cursor()
     for job in jobs:
-        job = re.sub('[-.]', '_', job).rsplit('_', 5)[0]
+        job = sql_job_lenght_limit(job)
         table_exist = cur.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' AND name=?", (job,))
         if not table_exist.fetchone():
-            cur.execute('CREATE TABLE  ' + job +
-                        ' (build_number INT, '
-                        'result VARCHAR(30),url VARCHAR(30))')
+            if "review_in_fuel_library" in job:
+                cur.execute('CREATE TABLE  ' + job +
+                            ' (build_number INT,'
+                            'result VARCHAR(30),url VARCHAR(30),'
+                            'skipped_modules Bit)')
+            else:
+                cur.execute('CREATE TABLE  ' + job +
+                            ' (build_number INT, '
+                            'result VARCHAR(30),url VARCHAR(30))')
 
     con.commit()
     con.close()
@@ -139,17 +160,19 @@ def create_database(db, jobs):
 
 def sql_job_lenght_limit(job):
     """ Remove SQL not supported chars from jobs names
-    and limit name name lenght
+    and limit name name length
     :param job: name of job
     :return: correct job name
     """
-
-    job_name = re.sub('[-.]', '_', job).rsplit('_', 5)[0]
+    job_name = re.sub('[-.]', '_', job)
     return job_name
 
 
-def check_builds_result(db, jobs, last_builds=None, db_previous_builds=None):
-    """ check builds results stored in db
+def check_for_failed_builds(db,
+                            jobs,
+                            last_builds=None,
+                            db_previous_builds=None):
+    """ check for failed builds results stored in db
     :param db: db connection's from open_db_conn method
     :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
     :param last_builds: dict from get_instance_last_builds_numbers
@@ -177,8 +200,7 @@ def check_builds_result(db, jobs, last_builds=None, db_previous_builds=None):
                 failed_jobs[job]['result'] = result
 
                 cur.execute('SELECT url from ' + sql_job_lenght_limit(
-                    job) + ' WHERE build_number=?',
-                            (last_builds[job],))
+                    job) + ' WHERE build_number=?', (last_builds[job],))
 
                 url = cur.fetchall()
                 failed_jobs[job]['url'] = url
@@ -208,6 +230,72 @@ def check_builds_result(db, jobs, last_builds=None, db_previous_builds=None):
                         failed_jobs[job]['url'] = url
 
     return failed_jobs
+
+
+def check_for_skipped_modules(db,
+                              jobs,
+                              last_builds=None,
+                              db_previous_builds=None):
+    """ check for skipped modules in build_results stored in db
+    :param db: db connection's from open_db_conn method
+    :param job: jobs with mapping
+    :param last_builds: dict from get_instance_last_builds_numbers
+    :param db_previous_builds: dict from get_db_builds_numbers
+    :return: dict of failed jobs if they present in db
+    """
+
+    jobs_with_skipped_modules = {}
+    db_builds = get_db_builds_number(db, jobs)
+    for job in jobs:
+        if job == "master.fuel-library.pkgs.ubuntu.review_in_fuel_library":
+            if last_builds:
+                con = open_db_conn(db)
+                cur = con.cursor()
+
+                cur.execute(
+                    'SELECT skipped_modules from ' + sql_job_lenght_limit(
+                        job) + ' WHERE build_number=?', (last_builds[job],))
+
+                result = cur.fetchall()
+                if 1 in result:
+                    con = open_db_conn(db)
+                    cur = con.cursor()
+                    jobs_with_skipped_modules[job] = {}
+                    jobs_with_skipped_modules[job]['skipped_modules'] = result
+
+                    cur.execute('SELECT url from ' + sql_job_lenght_limit(
+                        job) + ' WHERE build_number=?', (last_builds[job],))
+
+                    url = cur.fetchall()
+                    jobs_with_skipped_modules[job]['url'] = url
+
+            elif db_previous_builds:
+                for build in db_builds[sql_job_lenght_limit(job)]:
+                    if build not in db_previous_builds[sql_job_lenght_limit(
+                            job)]:
+                        con = open_db_conn(db)
+                        cur = con.cursor()
+
+                        cur.execute(
+                            'SELECT skipped_modules '
+                            'from ' + sql_job_lenght_limit(
+                                job) + ' WHERE build_number=?', (build,))
+
+                        result = cur.fetchall()
+                        if 1 in result:
+                            jobs_with_skipped_modules[job] = {}
+                            jobs_with_skipped_modules[job]['result'] = result
+                            con = open_db_conn(db)
+                            cur = con.cursor()
+
+                            cur.execute(
+                                'SELECT url from ' + sql_job_lenght_limit(
+                                    job) + ' WHERE build_number=?', (build,))
+
+                            url = cur.fetchall()
+                            jobs_with_skipped_modules[job]['url'] = url
+
+            return jobs_with_skipped_modules
 
 
 def get_db_builds_number(db, jobs):
@@ -258,18 +346,37 @@ def update_db(db, instance, jobs, builds_in_db=None, init=False):
             result = instance[job]['lastCompletedBuild']['result']
             url = instance[job]['lastCompletedBuild']['url']
             number = instance[job]['lastCompletedBuild']['number']
-            con = open_db_conn(db)
-            cur = con.cursor()
 
-            cur.execute(
-                'INSERT INTO ' + sql_job_lenght_limit(job) + ' (build_number ,'
-                                                             ' result, url'
-                                                             ') '
-                                                             'VALUES '
-                                                             '(?, ?, ?)',
-                (number, result, url))
-            con.commit()
-            con.close()
+            if job == "master.fuel-library.pkgs.ubuntu.review_in_fuel_library":
+                console = get_build_console(job, number)
+                skipped_modules = check_console_output_for_skipped_module(
+                    console)
+                con = open_db_conn(db)
+                cur = con.cursor()
+                cur.execute(
+                    'INSERT INTO ' + sql_job_lenght_limit(
+                        job) + ' (build_number ,'
+                               ' result, url,'
+                               'skipped_modules'
+                               ') '
+                               'VALUES '
+                               '(?, ?, ?, ?)',
+                    (number, result, url, skipped_modules))
+                con.commit()
+                con.close()
+
+            else:
+                con = open_db_conn(db)
+                cur = con.cursor()
+                cur.execute(
+                    'INSERT INTO ' + sql_job_lenght_limit(
+                        job) + ' (build_number ,'
+                               ' result, url)'
+                               'VALUES '
+                               '(?, ?, ?)',
+                    (number, result, url))
+                con.commit()
+                con.close()
 
         else:
             for i in range(len(instance[job]['builds'])):
@@ -278,19 +385,44 @@ def update_db(db, instance, jobs, builds_in_db=None, init=False):
                 number = instance[job]['builds'][i]['number']
                 if result:
                     if number not in builds_in_db[sql_job_lenght_limit(job)]:
-                        # remove after finish testing
-                        print number, builds_in_db[sql_job_lenght_limit(job)], sql_job_lenght_limit(job)
-                        con = open_db_conn(db)
-                        cur = con.cursor()
-
                         db_job = sql_job_lenght_limit(job)
+                        if job == "master.fuel-library.pkgs." \
+                                  "ubuntu.review_in_fuel_library":
+                            console = get_build_console(job, number)
+                            skipped_modules = (
+                                check_console_output_for_skipped_module(
+                                    console))
+                            con = open_db_conn(db)
+                            cur = con.cursor()
+                            cur.execute(
+                                "INSERT INTO " + db_job + " (build_number ,"
+                                                          "result, url, "
+                                                          "skipped_modules)"
+                                                          " VALUES "
+                                                          "(?, ?, ?, ?)",
+                                (number, result, url, skipped_modules))
+                            con.commit()
+                            con.close()
 
-                        cur.execute(
-                            "INSERT INTO " + db_job + " (build_number ,"
-                                                      "result, url)"
-                                                      " VALUES (?, ?, ?)",
-                            (number, result, url))
-                        con.commit()
-                        con.close()
+                        else:
+
+                            con = open_db_conn(db)
+                            cur = con.cursor()
+                            cur.execute(
+                                "INSERT INTO " + db_job + " (build_number ,"
+                                                          "result, url)"
+                                                          " VALUES (?, ?, ?)",
+                                (number, result, url))
+                            con.commit()
+                            con.close()
                     if number in builds_in_db[sql_job_lenght_limit(job)]:
                         break
+
+
+def check_console_output_for_skipped_module(console):
+    """
+    Check for skipped modules from mapping not covered by fuel-qa tests
+    :param console: string representation of job_build_console_output
+    :return: binary, 1 if there not covered modules
+    """
+    return 1 if 'not exist or not covered by system_test' in console else 0
