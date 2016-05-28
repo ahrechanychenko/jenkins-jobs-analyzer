@@ -1,3 +1,5 @@
+import os
+
 from files.utils import get_jobs_from_yaml
 from files.utils import get_job_instances
 from files.utils import get_instance_last_builds_numbers
@@ -15,22 +17,24 @@ if __name__ == '__main__':
                                   jobs=job_from_yaml)
     instance_last_builds = get_instance_last_builds_numbers(instances,
                                                             job_from_yaml)
-    db_con = settings.database
+    db = settings.database
+    db_exist = os.path.isfile(db)
 
-    if settings.init_run:
-        create_database(settings.database, job_from_yaml)
-        update_db(db_con, instances, job_from_yaml, init=True)
-
-        failed_jobs = check_builds_result(db_con,
-                                          job_from_yaml,
-                                          instance_last_builds)
-    else:
-        db_builds = get_db_builds_number(db_con, job_from_yaml)
-        update_db(db_con, instances, job_from_yaml, builds_in_db=db_builds)
-        failed_jobs = check_builds_result(db_con,
+    if db_exist:
+        db_builds = get_db_builds_number(db, job_from_yaml)
+        update_db(db, instances, job_from_yaml, builds_in_db=db_builds)
+        failed_jobs = check_builds_result(db,
                                           job_from_yaml,
                                           last_builds=None,
                                           db_previous_builds=db_builds)
+
+    else:
+        create_database(settings.database, job_from_yaml)
+        update_db(db, instances, job_from_yaml, init=True)
+
+        failed_jobs = check_builds_result(db,
+                                          job_from_yaml,
+                                          instance_last_builds)
 
     if failed_jobs:
         send_mail(list_of_failed_jobs=failed_jobs,
