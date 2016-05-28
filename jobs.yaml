@@ -1,0 +1,5 @@
+ #Example
+ # - master.fuel-agent.pkgs.ubuntu.review_fuel_agent_ironic_deploy
+ # - mitaka.fuel-agent.pkgs.ubuntu.review_fuel_agent_ironic_deploy
+ # - master.fuel-ostf.pkgs.ubuntu.gate_ostf_update
+ # - mitaka.fuel-ostf.pkgs.ubuntu.gate_ostf_update

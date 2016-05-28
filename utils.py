@@ -53,7 +53,13 @@ def pretty_log(src, indent=0, invert=False):
     return result
 
 
-def get_instance_last_build_number(job_instances, jobs):
+def get_instance_last_builds_numbers(job_instances, jobs):
+    """return last execute build number for job
+    :param job_instances: jenkins_job_instances from get_job_instances method
+    :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
+    :return: dict with 'job':int_build_number
+    """
+
     jobs_last_builds = {}
     for job_name in jobs:
         jobs_last_builds[job_name] = \
@@ -63,13 +69,23 @@ def get_instance_last_build_number(job_instances, jobs):
 
 
 def get_jobs_from_yaml(JENKINS_JOBS_YAML):
-    # retrieve jenkins job's from yaml
+    """ retrieve jenkins job's from yaml
+    :param JENKINS_JOBS_YAML: yaml file with list of jenkins jobs
+    :return: list with jobs
+    """
+
     with open(JENKINS_JOBS_YAML, "r") as f:
         jobs = yaml.load(f)
     return jobs
 
 
 def get_job_instances(host, jobs):
+    """ retrieve dict with full info of executed jenkins_jobs
+    :param host: jenkins host from settings.JENKINS_HOST
+    :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
+    :return: dict with instances {job_name:instance,}
+    """
+
     jenkins_url = 'http://' + host
     server = jenkins.Jenkins(jenkins_url)
 
@@ -88,7 +104,7 @@ def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server):
     msg['From'] = fromaddr
     msg['To'] = toaddr
     msg['Subject'] = "gating"
-    body = "list of failed jobs \n {}".format(pretty_log(list_of_failed_jobs))
+    body = "list of failed jobs \n {}".format(pretty_log(list_of_failed_jobs, indent=1))
     msg.attach(MIMEText(body, 'plain'))
 
     server = smtplib.SMTP(smtp_server, 587)
@@ -100,6 +116,11 @@ def send_mail(list_of_failed_jobs, sender, reciever, password, smtp_server):
 
 
 def create_database(db, jobs):
+    """ Create database and create schema for data
+    :param db: string, name of database
+    :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
+    """
+
     con = open_db_conn(db)
     cur = con.cursor()
     for job in jobs:
@@ -117,22 +138,35 @@ def create_database(db, jobs):
 
 
 def sql_job_lenght_limit(job):
+    """ Remove SQL not supported chars from jobs names
+    and limit name name lenght
+    :param job: name of job
+    :return: correct job name
+    """
+
     job_name = re.sub('[-.]', '_', job).rsplit('_', 5)[0]
     return job_name
 
 
-def check_last_build_result(db, jobs, jobs_build_numbers=None,
-                            db_previous_builds=None):
+def check_builds_result(db, jobs, last_builds=None, db_previous_builds=None):
+    """ check builds results stored in db
+    :param db: db connection's from open_db_conn method
+    :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
+    :param last_builds: dict from get_instance_last_builds_numbers
+    :param db_previous_builds: dict from get_db_builds_numbers
+    :return: dict of failed jobs if they present in db
+    """
+
     failed_jobs = {}
     db_builds = get_db_builds_number(db, jobs)
     for job in jobs:
-        if jobs_build_numbers:
+        if last_builds:
             con = open_db_conn(db)
             cur = con.cursor()
 
             cur.execute(
                 'SELECT result from ' + sql_job_lenght_limit(
-                    job) + ' WHERE build_number=?', (jobs_build_numbers[job],))
+                    job) + ' WHERE build_number=?', (last_builds[job],))
 
             result = cur.fetchall()
 
@@ -144,7 +178,7 @@ def check_last_build_result(db, jobs, jobs_build_numbers=None,
 
                 cur.execute('SELECT url from ' + sql_job_lenght_limit(
                     job) + ' WHERE build_number=?',
-                            (jobs_build_numbers[job],))
+                            (last_builds[job],))
 
                 url = cur.fetchall()
                 failed_jobs[job]['url'] = url
@@ -156,9 +190,8 @@ def check_last_build_result(db, jobs, jobs_build_numbers=None,
                     cur = con.cursor()
 
                     cur.execute(
-                        'SELECT result from ' + re.sub(
-                            '[-.]', '_', job) + ' WHERE build_number=?', (
-                            build,))
+                        'SELECT result from ' + sql_job_lenght_limit(
+                            job) + ' WHERE build_number=?', (build,))
 
                     result = cur.fetchall()
                     if 'FAILURE' in result:
@@ -168,9 +201,8 @@ def check_last_build_result(db, jobs, jobs_build_numbers=None,
                         cur = con.cursor()
 
                         cur.execute(
-                            'SELECT url from ' + re.sub(
-                                '[-.]', '_', job) + ' WHERE build_number=?', (
-                                build,))
+                            'SELECT url from ' + sql_job_lenght_limit(
+                                job) + ' WHERE build_number=?', (build,))
 
                         url = cur.fetchall()
                         failed_jobs[job]['url'] = url
@@ -179,6 +211,12 @@ def check_last_build_result(db, jobs, jobs_build_numbers=None,
 
 
 def get_db_builds_number(db, jobs):
+    """ Return dict with builds for jobs stored in db
+    :param db: db connection's from open_db_conn method
+    :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
+    :return: dict {'job':[builds]}
+    """
+
     builds = {}
     for job in jobs:
         job = sql_job_lenght_limit(job)
@@ -195,12 +233,25 @@ def get_db_builds_number(db, jobs):
 
 
 def open_db_conn(db):
+    """ Connect to db and return con instance
+    :param db: name of db
+    :return: connection instance
+    """
+
     con = sqlite3.connect(db)
     con.row_factory = lambda cursor, row: row[0]
     return con
 
 
 def update_db(db, instance, jobs, builds_in_db=None, init=False):
+    """ Add results of jobs to db
+    :param db: db connection's from open_db_conn method
+    :param jobs: list of jobs executed retrieved from get_jobs_from_yaml method
+    :param instance: instances from get_job_instances method
+    :param builds_in_db: dict from get_db_builds_numbers
+    :param init: if init - write only last build's from instances
+    """
+
     for job in jobs:
 
         if init:
@@ -225,17 +276,21 @@ def update_db(db, instance, jobs, builds_in_db=None, init=False):
                 url = instance[job]['builds'][i]['url']
                 result = instance[job]['builds'][i]['result']
                 number = instance[job]['builds'][i]['number']
-                if number == builds_in_db[sql_job_lenght_limit(job)]:
-		    break
-		else:
-                    con = open_db_conn(db)
-                    cur = con.cursor()
+                if result:
+                    if number not in builds_in_db[sql_job_lenght_limit(job)]:
+                        # remove after finish testing
+                        print number, builds_in_db[sql_job_lenght_limit(job)], sql_job_lenght_limit(job)
+                        con = open_db_conn(db)
+                        cur = con.cursor()
 
-                    db_job = sql_job_lenght_limit(job)
+                        db_job = sql_job_lenght_limit(job)
 
-                    cur.execute(
-                        "INSERT INTO " + db_job + " (build_number ,result, url)"
-                                               " VALUES (?, ?, ?)",
-                        (number, result, url))
-		    con.commit()
-                    con.close()
+                        cur.execute(
+                            "INSERT INTO " + db_job + " (build_number ,"
+                                                      "result, url)"
+                                                      " VALUES (?, ?, ?)",
+                            (number, result, url))
+                        con.commit()
+                        con.close()
+                    if number in builds_in_db[sql_job_lenght_limit(job)]:
+                        break
