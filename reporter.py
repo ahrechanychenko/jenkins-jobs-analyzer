@@ -1,12 +1,12 @@
-from utils import get_jobs_from_yaml
-from utils import get_job_instances
-from utils import get_instance_last_builds_numbers
-from utils import check_builds_result
-from utils import send_mail
-from utils import get_db_builds_number
-from utils import create_database
-from utils import update_db
-import settings
+from files.utils import get_jobs_from_yaml
+from files.utils import get_job_instances
+from files.utils import get_instance_last_builds_numbers
+from files.utils import check_builds_result
+from files.utils import send_mail
+from files.utils import get_db_builds_number
+from files.utils import create_database
+from files.utils import update_db
+from files import settings
 
 if __name__ == '__main__':
 
