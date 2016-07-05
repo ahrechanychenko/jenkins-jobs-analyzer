@@ -261,7 +261,6 @@ def check_for_skipped_modules(db,
                     con = open_db_conn(db)
                     cur = con.cursor()
                     jobs_with_skipped_modules[job] = {}
-                    jobs_with_skipped_modules[job]['skipped_modules'] = result
 
                     cur.execute('SELECT url from ' + sql_job_lenght_limit(
                         job) + ' WHERE build_number=?', (last_builds[job],))
@@ -284,7 +283,6 @@ def check_for_skipped_modules(db,
                         result = cur.fetchall()
                         if 1 in result:
                             jobs_with_skipped_modules[job] = {}
-                            jobs_with_skipped_modules[job]['result'] = result
                             con = open_db_conn(db)
                             cur = con.cursor()
 
